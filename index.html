@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>電子レンジワット変換ツール</title>
+  <style>
+    /* シンプルな見た目。Tailwindとか使ってないから純CSSで調整してるよ */
+    :root{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;margin:0}
+    body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f6f7fb;color:#1a1a1a}
+    .card{background:#fff;padding:24px;border-radius:12px;box-shadow:0 6px 18px rgba(20,20,50,0.08);width:360px}
+    h1{font-size:18px;margin:0 0 12px}
+    label{display:block;font-size:13px;margin-top:10px}
+    input[type=number], input[type=text]{width:100%;padding:10px;border-radius:8px;border:1px solid #e3e6ef;font-size:14px;box-sizing:border-box;}
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button{appearance:none;margin:0;}
+    input[type=number]{appearance:textfield;}
+    .row{display:flex;gap:8px}
+    button{margin-top:12px;width:100%;padding:10px;border-radius:10px;border:0;background:#2b8cff;color:#fff;font-weight:600;cursor:pointer}
+    .result{margin-top:12px;padding:10px;border-radius:8px;background:#f3f7ff;border:1px dashed #cfe0ff}
+    .small{font-size:12px;color:#666;margin-top:6px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>レンジ時間変換ツール</h1>
+    <p class="small">レシピのワット数と時間から、あなたのレンジのワットに合わせた時間を計算するよ。</p>
+
+    <!-- レシピのワット入力 -->
+    <label for="recipeW">元のワット（レシピに書かれているワット）</label>
+    <input id="recipeW" type="number" min="1" value="600" />
+
+    <!-- 自分のレンジのワット入力 -->
+    <label for="myW">使っているレンジのワット</label>
+    <input id="myW" type="number" min="1" value="700" />
+
+    <!-- 時間入力。mm:ss か 秒で入力できる -->
+    <label for="timeInput">元の時間（mm:ss か 秒）</label>
+    <input id="timeInput" type="text" placeholder="例: 1:30 または 90" />
+
+    <button id="convertBtn">変換する</button>
+
+    <div class="result" id="resultArea" style="display:none">
+      <div>変換後の時間: <strong id="outTime"></strong></div>
+      <div class="small">秒数で表示: <span id="outSeconds"></span> 秒</div>
+      <button id="copyBtn" style="margin-top:8px;padding:8px;border-radius:8px;border:0;background:#23b36a;color:#fff;cursor:pointer">コピー</button>
+    </div>
+
+    <p class="small">注意: この計算はワット比に基づく単純な変換です。卵など爆発しやすい食品や密閉容器は注意してね。</p>
+  </div>
+
+  <script>
+    // 以下はコードの説明です。コメントは普通の口調で書いてあります。
+
+    // 時刻文字列（mm:ss または 秒）を秒数に変換する関数
+    function parseTimeToSeconds(s){
+      s = String(s).trim();
+      if(!s) return NaN;
+      // mm:ss の形式になっているか確認
+      if(s.indexOf(':') !== -1){
+        const parts = s.split(':').map(p => p.trim());
+        // 分:秒 の可能性が高いので、後ろから計算する
+        let seconds = 0;
+        try{
+          if(parts.length === 2){
+            const minutes = parseFloat(parts[0]);
+            const sec = parseFloat(parts[1]);
+            if(isNaN(minutes) || isNaN(sec)) return NaN;
+            seconds = minutes * 60 + sec;
+          } else if(parts.length === 3){
+            // もし hh:mm:ss の形式が来たら対応
+            const hours = parseFloat(parts[0]);
+            const minutes = parseFloat(parts[1]);
+            const sec = parseFloat(parts[2]);
+            if(isNaN(hours) || isNaN(minutes) || isNaN(sec)) return NaN;
+            seconds = hours * 3600 + minutes * 60 + sec;
+          } else {
+            return NaN;
+          }
+        }catch(e){
+          return NaN;
+        }
+        return seconds;
+      }
+      // 単純に数字ならそのまま秒数とみなす
+      const n = parseFloat(s);
+      return isNaN(n) ? NaN : n;
+    }
+
+    // 秒数を mm:ss 形式に整形する関数
+    function formatSeconds(sec){
+      // sec は小数を持つ可能性があるため四捨五入して整数にする
+      const s = Math.round(sec);
+      const minutes = Math.floor(s / 60);
+      const seconds = s % 60;
+      if(minutes > 0) return `${minutes}:${String(seconds).padStart(2,'0')}`;
+      return `${seconds}s`;
+    }
+
+    // 実際の変換ロジック: 新しい時間 = 元時間 * (元ワット / 新ワット)
+    function convertTime(origTimeSec, origW, newW){
+      if(newW === 0) return NaN;
+      return origTimeSec * (origW / newW);
+    }
+
+    // UI イベントの接続
+    document.getElementById('convertBtn').addEventListener('click', ()=>{
+      const recipeW = parseFloat(document.getElementById('recipeW').value);
+      const myW = parseFloat(document.getElementById('myW').value);
+      const timeStr = document.getElementById('timeInput').value;
+
+      // 入力チェック
+      if(isNaN(recipeW) || recipeW <= 0){
+        alert('元のワットを正しく入力してください。');
+        return;
+      }
+      if(isNaN(myW) || myW <= 0){
+        alert('使っているレンジのワットを正しく入力してください。');
+        return;
+      }
+
+      const origSec = parseTimeToSeconds(timeStr);
+      if(isNaN(origSec) || origSec < 0){
+        alert('時間を mm:ss か 秒で入力してください。');
+        return;
+      }
+
+      const newSec = convertTime(origSec, recipeW, myW);
+      if(!isFinite(newSec) || isNaN(newSec)){
+        alert('計算できませんでした。入力を確認してください。');
+        return;
+      }
+
+      // 結果を表示
+      document.getElementById('outTime').textContent = formatSeconds(newSec);
+      document.getElementById('outSeconds').textContent = Math.round(newSec);
+      document.getElementById('resultArea').style.display = 'block';
+    });
+
+    // コピー機能: 変換後の秒数をクリップボードへコピー
+    document.getElementById('copyBtn').addEventListener('click', async ()=>{
+      const text = document.getElementById('outSeconds').textContent;
+      try{
+        await navigator.clipboard.writeText(text);
+        alert('秒数をコピーしました: ' + text + ' 秒');
+      }catch(e){
+        alert('コピーに失敗しました。ブラウザの権限を確認してね。');
+      }
+    });
+  </script>
+</body>
+</html>
